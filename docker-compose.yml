@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8443:443"
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    networks:
+      - sliverui
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - DEBUG=${DEBUG:-true}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_URL=sqlite:////app/data/sliverui.db
+      - REDIS_URL=redis://redis:6379/0
+      - SLIVER_CONFIG=/app/config/operator.cfg
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRE_MINUTES=60
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./data/sqlite:/app/data
+      - ./config:/app/config:ro
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - sliverui
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - sliverui
+
+  # Redis for caching and pub/sub
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - ./data/redis:/data
+    restart: unless-stopped
+    networks:
+      - sliverui
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Celery worker for background tasks
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.tasks worker -l info -c 2
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_URL=sqlite:////app/data/sliverui.db
+      - REDIS_URL=redis://redis:6379/0
+      - SLIVER_CONFIG=/app/config/operator.cfg
+    volumes:
+      - ./backend/app:/app/app:ro
+      - ./data/sqlite:/app/data
+      - ./config:/app/config:ro
+    depends_on:
+      - redis
+      - backend
+    restart: unless-stopped
+    networks:
+      - sliverui
+
+networks:
+  sliverui:
+    driver: bridge
+
+volumes:
+  sqlite-data:
+  redis-data:
