@@ -101,7 +101,7 @@ export function MainLayout() {
   }
 
   // Check if user is admin to show admin link
-  const isAdmin = user?.role === 'admin' || user?.role?.name === 'admin'
+  const isAdmin = user?.role === 'admin'
 
   // Get badge for nav item
   const getBadge = (path: string) => {
@@ -290,7 +290,7 @@ export function MainLayout() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{user?.username}</p>
                 <p className="text-xs text-muted-foreground truncate capitalize">
-                  {typeof user?.role === 'string' ? user.role : user?.role?.name}
+                  {user?.role}
                 </p>
               </div>
             )}

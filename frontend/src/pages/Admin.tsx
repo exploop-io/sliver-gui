@@ -17,7 +17,7 @@ export function Admin() {
   const { user } = useAuth()
 
   // Check if user is admin
-  if (user?.role?.name !== 'admin') {
+  if (user?.role !== 'admin') {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
