@@ -601,6 +601,9 @@ class SliverManager:
     # ═══════════════════════════════════════════════════════════════════════════
 
     _sliver_client_configured = False
+    _armory_cache = None
+    _armory_cache_time = 0
+    _armory_cache_ttl = 300  # Cache for 5 minutes
 
     def _setup_sliver_client_config(self) -> bool:
         """Setup sliver-client config from operator config file"""
@@ -703,53 +706,151 @@ class SliverManager:
                 pass
             raise SliverCommandError(f"Failed to run sliver-client: {str(e)}")
 
-    async def get_armory(self) -> List[dict]:
-        """Get list of available armory packages using sliver-client CLI"""
+    async def _get_installed_packages(self) -> set:
+        """Get set of installed package names using aliases and extensions commands"""
+        installed = set()
+
+        try:
+            # Get installed aliases
+            aliases_output = await self._run_sliver_client_command("aliases", timeout=30)
+            aliases_output = self._strip_ansi(aliases_output)
+            for line in aliases_output.split('\n'):
+                if '✅' in line or 'true' in line.lower():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        installed.add(parts[0].lower())
+                        installed.add(parts[1].lower())  # Also add command name
+        except Exception as e:
+            logger.debug(f"Failed to get aliases: {e}")
+
+        try:
+            # Get installed extensions
+            ext_output = await self._run_sliver_client_command("extensions", timeout=30)
+            ext_output = self._strip_ansi(ext_output)
+            for line in ext_output.split('\n'):
+                if '✅' in line or 'installed' in line.lower():
+                    parts = line.split()
+                    if parts:
+                        installed.add(parts[0].lower())
+        except Exception as e:
+            logger.debug(f"Failed to get extensions: {e}")
+
+        return installed
+
+    async def get_armory(self, force_refresh: bool = False) -> List[dict]:
+        """Get list of available armory packages using sliver-client CLI (cached)"""
+        import time
+
         if not self.is_connected:
             return []
 
+        # Check cache first
+        now = time.time()
+        if not force_refresh and self.__class__._armory_cache is not None:
+            if now - self.__class__._armory_cache_time < self.__class__._armory_cache_ttl:
+                logger.debug("Returning cached armory data")
+                # Still update installed status from quick aliases/extensions check
+                try:
+                    installed = await self._get_installed_packages()
+                    for pkg in self.__class__._armory_cache:
+                        pkg['installed'] = pkg.get('name', '').lower() in installed or \
+                                          pkg.get('command_name', '').lower() in installed
+                except:
+                    pass
+                return self.__class__._armory_cache
+
         try:
             # Try using sliver-client CLI
-            output = await self._run_sliver_client_command("armory")
-            return self._parse_armory_output(output)
+            logger.info("Fetching armory data from sliver-client...")
+            output = await self._run_sliver_client_command("armory", timeout=120)
+            packages = self._parse_armory_output(output)
+
+            # Get installed packages
+            try:
+                installed = await self._get_installed_packages()
+                for pkg in packages:
+                    pkg['installed'] = pkg.get('name', '').lower() in installed or \
+                                      pkg.get('command_name', '').lower() in installed
+            except Exception as e:
+                logger.warning(f"Failed to check installed packages: {e}")
+
+            # Update cache
+            self.__class__._armory_cache = packages
+            self.__class__._armory_cache_time = now
+            logger.info(f"Cached {len(packages)} armory packages")
+
+            return packages
         except Exception as e:
             logger.error(f"Failed to get armory via CLI: {e}")
-            # Fallback to mock data
+            # Return cache if available, otherwise mock data
+            if self.__class__._armory_cache is not None:
+                return self.__class__._armory_cache
             return self._get_mock_armory()
+
+    def _strip_ansi(self, text: str) -> str:
+        """Strip ANSI escape codes from text"""
+        import re
+        # Remove ANSI escape sequences
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        return ansi_escape.sub('', text)
 
     def _parse_armory_output(self, output: str) -> List[dict]:
         """Parse armory command output into structured data"""
+        import re
+
+        # Strip ANSI escape codes first
+        output = self._strip_ansi(output)
+
         packages = []
         lines = output.strip().split('\n')
 
-        # Skip header lines (usually first 2-3 lines are headers)
-        data_started = False
+        # Find the separator line to know where data starts
+        in_table = False
         for line in lines:
-            line = line.strip()
-            if not line:
+            # Skip empty lines
+            if not line.strip():
                 continue
 
-            # Look for data rows (they usually have multiple columns separated by spaces)
-            parts = line.split()
-            if len(parts) >= 2:
-                # Check if this looks like a package row (not a header)
-                if parts[0].lower() not in ['name', 'command', 'package', '─', '━', '═']:
-                    data_started = True
+            # Check for separator line (=== or ---)
+            if re.match(r'^[=\-─━]+\s*[=\-─━]*', line.strip()):
+                in_table = True
+                continue
 
-                if data_started:
-                    name = parts[0]
-                    # Try to determine if installed based on output format
-                    installed = '✓' in line or 'installed' in line.lower() or '[x]' in line.lower()
+            # Skip lines before the table
+            if not in_table:
+                continue
 
-                    packages.append({
-                        "name": name,
-                        "command_name": parts[1] if len(parts) > 1 else name,
-                        "version": parts[2] if len(parts) > 2 else "1.0.0",
-                        "installed": installed,
-                        "type": "alias",
-                        "repo_url": f"https://github.com/search?q={name}",
-                    })
+            # Parse data rows
+            # Format: "Default   bof-roast   v0.0.2    Extension   Help text..."
+            # Use regex to match: word, spaces, word, spaces, version, spaces, type, spaces, rest
+            match = re.match(
+                r'^(\S+)\s+(\S+)\s+(v?[\d\.]+\S*)\s+(\S+)(?:\s+(.*))?$',
+                line.strip()
+            )
 
+            if match:
+                armory_name = match.group(1)
+                command_name = match.group(2)
+                version = match.group(3)
+                pkg_type = match.group(4)
+                help_text = match.group(5).strip() if match.group(5) else ""
+
+                # Skip if it looks like a header
+                if armory_name.lower() in ['armory', 'name', 'package', 'packages']:
+                    continue
+
+                packages.append({
+                    "name": command_name,
+                    "command_name": command_name,
+                    "version": version,
+                    "installed": False,
+                    "type": pkg_type.lower() if pkg_type else "alias",
+                    "repo_url": f"https://github.com/sliverarmory/{command_name}",
+                    "help": help_text,
+                    "armory": armory_name,
+                })
+
+        logger.info(f"Parsed {len(packages)} packages from armory output")
         return packages if packages else self._get_mock_armory()
 
     def _get_mock_armory(self) -> List[dict]:
@@ -777,11 +878,15 @@ class SliverManager:
                 timeout=300  # Installation can take a while
             )
             logger.info(f"Armory install output: {output}")
+
+            # Invalidate cache after install
+            self.__class__._armory_cache = None
+
             return {
                 "success": True,
                 "package": package_name,
                 "message": f"Successfully installed {package_name}",
-                "output": output
+                "output": self._strip_ansi(output)
             }
         except SliverCommandError as e:
             raise SliverCommandError(f"Failed to install {package_name}: {str(e)}")
@@ -795,11 +900,15 @@ class SliverManager:
         try:
             output = await self._run_sliver_client_command(f"armory remove {package_name}")
             logger.info(f"Armory uninstall output: {output}")
+
+            # Invalidate cache after uninstall
+            self.__class__._armory_cache = None
+
             return {
                 "success": True,
                 "package": package_name,
                 "message": f"Successfully uninstalled {package_name}",
-                "output": output
+                "output": self._strip_ansi(output)
             }
         except SliverCommandError as e:
             raise SliverCommandError(f"Failed to uninstall {package_name}: {str(e)}")
