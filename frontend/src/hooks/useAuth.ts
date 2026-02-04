@@ -1,114 +1,68 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+/**
+ * useAuth hook - wrapper around authStore for component usage
+ */
+import { useAuthStore } from '@/store/authStore'
+import { authApi } from '@/services/api'
 
-interface User {
-  id: string;
-  username: string;
-  role: 'admin' | 'operator' | 'viewer';
-  permissions: string[];
-}
+export const useAuth = () => {
+  const store = useAuthStore()
 
-interface AuthState {
-  user: User | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: string | null;
-  login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
-  checkAuth: () => Promise<void>;
-  hasPermission: (permission: string) => boolean;
-  isAdmin: () => boolean;
-}
+  const login = async (username: string, password: string) => {
+    try {
+      // Call login API
+      const data = await authApi.login(username, password)
 
-export const useAuth = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
+      // Fetch user info
+      // First set tokens so the API interceptor can use them
+      store.setTokens(data.access_token, data.refresh_token)
 
-      login: async (username: string, password: string) => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await fetch('/api/v1/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password }),
-          });
+      // Then fetch user details
+      const user = await authApi.me()
 
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Login failed');
-          }
+      // Update store with full user info
+      store.login(data.access_token, data.refresh_token, user)
 
-          const data = await response.json();
-          set({
-            user: data.user,
-            token: data.access_token,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (error) {
-          set({
-            error: error instanceof Error ? error.message : 'Login failed',
-            isLoading: false,
-          });
-          throw error;
-        }
-      },
-
-      logout: () => {
-        set({
-          user: null,
-          token: null,
-          isAuthenticated: false,
-          error: null,
-        });
-      },
-
-      checkAuth: async () => {
-        const token = get().token;
-        if (!token) {
-          set({ isAuthenticated: false });
-          return;
-        }
-
-        try {
-          const response = await fetch('/api/v1/auth/me', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-
-          if (!response.ok) {
-            throw new Error('Token invalid');
-          }
-
-          const user = await response.json();
-          set({ user, isAuthenticated: true });
-        } catch {
-          set({ user: null, token: null, isAuthenticated: false });
-        }
-      },
-
-      hasPermission: (permission: string) => {
-        const user = get().user;
-        if (!user) return false;
-        if (user.role === 'admin') return true;
-        return user.permissions.includes(permission);
-      },
-
-      isAdmin: () => {
-        const user = get().user;
-        return user?.role === 'admin';
-      },
-    }),
-    {
-      name: 'auth-storage',
-      partialize: (state) => ({ token: state.token }),
+      return { success: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Login failed'
+      return { success: false, error: message }
     }
-  )
-);
+  }
 
-export default useAuth;
+  const logout = async () => {
+    try {
+      await authApi.logout()
+    } catch {
+      // Ignore logout API errors
+    }
+    store.logout()
+  }
+
+  const checkAuth = async () => {
+    if (!store.accessToken) {
+      return false
+    }
+
+    try {
+      const user = await authApi.me()
+      store.login(store.accessToken, store.refreshToken || '', user)
+      return true
+    } catch {
+      store.logout()
+      return false
+    }
+  }
+
+  return {
+    user: store.user,
+    isAuthenticated: store.isAuthenticated,
+    accessToken: store.accessToken,
+    hasPermission: store.hasPermission,
+    isAdmin: () => store.user?.role === 'admin',
+    login,
+    logout,
+    checkAuth,
+  }
+}
+
+export default useAuth

@@ -13,7 +13,7 @@ export function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
-  const login = useAuthStore((state) => state.login)
+  const { login, setTokens } = useAuthStore()
   const { toast } = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,10 +24,13 @@ export function Login() {
       // Login to get tokens
       const tokenData = await authApi.login(username, password)
 
-      // Get user info
+      // Store tokens FIRST so API interceptor can use them
+      setTokens(tokenData.access_token, tokenData.refresh_token)
+
+      // Now get user info (with token in header)
       const userData = await authApi.me()
 
-      // Store in auth store
+      // Update store with full user info
       login(tokenData.access_token, tokenData.refresh_token, userData)
 
       toast({
