@@ -52,22 +52,23 @@ const iconLegend = [
 export function StatusLegend() {
   const [isOpen, setIsOpen] = useState(false)
 
-  if (!isOpen) {
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setIsOpen(true)}
-        className="text-muted-foreground"
-      >
-        <Info className="h-4 w-4 mr-1" />
-        Color Legend
-      </Button>
-    )
-  }
-
   return (
-    <div className="fixed bottom-6 left-6 z-[100] w-80 bg-card border rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
+    <>
+      {/* Floating button - fixed position bottom-right, less intrusive */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setIsOpen(!isOpen)}
+        className="fixed bottom-4 right-4 z-[90] shadow-lg bg-background/95 backdrop-blur-sm hover:bg-accent"
+        title="Color Legend"
+      >
+        <Info className="h-4 w-4" />
+        <span className="sr-only">Color Legend</span>
+      </Button>
+
+      {/* Popup panel */}
+      {isOpen && (
+        <div className="fixed bottom-14 right-4 z-[100] w-80 bg-card border rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200 max-h-[70vh] overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b bg-muted/50">
         <h3 className="font-medium">Color Legend</h3>
@@ -124,6 +125,8 @@ export function StatusLegend() {
         </div>
       </div>
     </div>
+      )}
+    </>
   )
 }
 

@@ -38,13 +38,22 @@ async def list_listeners(
 
     listeners = []
     for job in jobs:
+        # Get host - default to 0.0.0.0 if empty
+        host = job.get("host", "") or "0.0.0.0"
+
+        # Get domain from job data
+        domain = job.get("domain")
+        if not domain and job.get("domains"):
+            domain = job["domains"][0] if job["domains"] else None
+
         listeners.append(
             ListenerResponse(
                 id=job["id"],
                 name=job.get("name", ""),
                 protocol=job.get("protocol", "unknown"),
-                host=job.get("host", ""),
+                host=host,
                 port=job.get("port", 0),
+                domain=domain,
                 started_at=datetime.now(timezone.utc),  # Jobs don't have timestamp
             )
         )

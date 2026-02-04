@@ -239,12 +239,19 @@ export function Listeners() {
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
-                  <p className="text-lg font-mono">
-                    {listener.host}:{listener.port}
-                  </p>
-                  {listener.domain && (
-                    <p className="text-sm text-muted-foreground">
-                      Domain: {listener.domain}
+                  {/* Show domain prominently if available */}
+                  {listener.domain ? (
+                    <>
+                      <p className="text-lg font-semibold text-primary">
+                        {listener.domain}
+                      </p>
+                      <p className="text-sm font-mono text-muted-foreground">
+                        {listener.host || '0.0.0.0'}:{listener.port}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-lg font-mono">
+                      {listener.host || '0.0.0.0'}:{listener.port}
                     </p>
                   )}
                   <p className="text-xs text-muted-foreground mt-2">

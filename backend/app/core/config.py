@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # Sliver
     sliver_config: Optional[str] = None
 
+    # GitHub token for armory operations (increases rate limit from 60 to 5000/hour)
+    github_token: Optional[str] = None
+
     # CORS
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
 

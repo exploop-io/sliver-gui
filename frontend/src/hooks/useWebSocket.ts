@@ -4,9 +4,8 @@ import { useToast } from '@/components/ui/use-toast'
 import { useNotificationStore } from '@/store/notificationStore'
 
 interface WebSocketMessage {
-  type: 'session_connected' | 'session_disconnected' | 'beacon_checkin' | 'beacon_disconnected' | 'task_completed' | 'notification'
-  data: any
-  timestamp: string
+  event: 'connected' | 'session.new' | 'session.lost' | 'beacon.new' | 'beacon.checkin' | 'task_completed' | 'notification' | 'ping' | 'pong' | 'subscribed' | 'error'
+  data?: any
 }
 
 interface UseWebSocketOptions {
@@ -55,102 +54,105 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       const message: WebSocketMessage = JSON.parse(event.data)
       setLastMessage(message)
 
-      switch (message.type) {
-        case 'session_connected':
+      switch (message.event) {
+        case 'connected':
+          console.log('WebSocket connected, sliver status:', message.data?.sliver_connected)
+          break
+
+        case 'session.new':
           queryClient.invalidateQueries({ queryKey: ['sessions'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
           toast({
             title: 'New Session Connected',
-            description: `${message.data.name || message.data.id} connected from ${message.data.remote_address}`,
+            description: `${message.data?.name || message.data?.id} connected from ${message.data?.remote_address || 'unknown'}`,
           })
           addNotification({
             type: 'session',
             title: 'New Session',
-            message: `${message.data.name || message.data.id} connected from ${message.data.remote_address}`,
+            message: `${message.data?.name || message.data?.id} connected from ${message.data?.remote_address || 'unknown'}`,
             data: message.data,
           })
           break
 
-        case 'session_disconnected':
+        case 'session.lost':
           queryClient.invalidateQueries({ queryKey: ['sessions'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
           toast({
             variant: 'destructive',
             title: 'Session Disconnected',
-            description: `${message.data.name || message.data.id} has disconnected`,
+            description: `Session ${message.data?.id} has disconnected`,
           })
           addNotification({
             type: 'warning',
             title: 'Session Disconnected',
-            message: `${message.data.name || message.data.id} has disconnected`,
+            message: `Session ${message.data?.id} has disconnected`,
             data: message.data,
           })
           break
 
-        case 'beacon_checkin':
-          queryClient.invalidateQueries({ queryKey: ['beacons'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
-          // Check if this is a new beacon (first check-in)
-          if (message.data.is_new) {
-            toast({
-              title: 'New Beacon',
-              description: `${message.data.name || message.data.id} first check-in`,
-            })
-            addNotification({
-              type: 'beacon',
-              title: 'New Beacon',
-              message: `${message.data.name || message.data.id} first check-in from ${message.data.remote_address || 'unknown'}`,
-              data: message.data,
-            })
-          }
-          break
-
-        case 'beacon_disconnected':
+        case 'beacon.new':
           queryClient.invalidateQueries({ queryKey: ['beacons'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
           toast({
-            variant: 'destructive',
-            title: 'Beacon Disconnected',
-            description: `Beacon ${message.data.name || message.data.id} missed check-in`,
+            title: 'New Beacon',
+            description: `${message.data?.name || message.data?.id} first check-in`,
           })
           addNotification({
-            type: 'warning',
-            title: 'Beacon Missed Check-in',
-            message: `Beacon ${message.data.name || message.data.id} has not checked in`,
+            type: 'beacon',
+            title: 'New Beacon',
+            message: `${message.data?.name || message.data?.id} first check-in from ${message.data?.remote_address || 'unknown'}`,
             data: message.data,
           })
+          break
+
+        case 'beacon.checkin':
+          queryClient.invalidateQueries({ queryKey: ['beacons'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
           break
 
         case 'task_completed':
-          queryClient.invalidateQueries({ queryKey: ['beacon-tasks', message.data.beacon_id] })
+          queryClient.invalidateQueries({ queryKey: ['beacon-tasks', message.data?.beacon_id] })
           toast({
             title: 'Task Completed',
-            description: `Task ${message.data.task_type} completed for beacon ${message.data.beacon_name}`,
+            description: `Task ${message.data?.task_type} completed for beacon ${message.data?.beacon_name}`,
           })
           addNotification({
             type: 'info',
             title: 'Task Completed',
-            message: `Task ${message.data.task_type} completed for ${message.data.beacon_name}`,
+            message: `Task ${message.data?.task_type} completed for ${message.data?.beacon_name}`,
             data: message.data,
           })
           break
 
         case 'notification':
           toast({
-            title: message.data.title,
-            description: message.data.message,
-            variant: message.data.variant || 'default',
+            title: message.data?.title,
+            description: message.data?.message,
+            variant: message.data?.variant || 'default',
           })
           addNotification({
-            type: message.data.variant === 'destructive' ? 'error' : 'info',
-            title: message.data.title,
-            message: message.data.message,
+            type: message.data?.variant === 'destructive' ? 'error' : 'info',
+            title: message.data?.title,
+            message: message.data?.message,
             data: message.data,
           })
           break
 
+        case 'ping':
+          // Respond to server ping
+          break
+
+        case 'pong':
+        case 'subscribed':
+        case 'error':
+          // Handle other events silently
+          if (message.event === 'error') {
+            console.error('WebSocket error:', message.data?.message)
+          }
+          break
+
         default:
-          console.log('Unknown WebSocket message type:', message.type)
+          console.log('Unknown WebSocket event:', message.event)
       }
     } catch (error) {
       console.error('Failed to parse WebSocket message:', error)

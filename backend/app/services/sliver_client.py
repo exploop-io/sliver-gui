@@ -587,12 +587,22 @@ class SliverManager:
 
     def _job_to_dict(self, job: Any) -> dict:
         """Convert Sliver job object to dict"""
+        # Extract domain from job - may be in Domains list or Name
+        domains = []
+        if hasattr(job, "Domains") and job.Domains:
+            domains = list(job.Domains)
+
+        # For HTTP/HTTPS listeners, domain might be encoded in the name
+        domain = domains[0] if domains else None
+
         return {
             "id": str(job.ID),
             "name": job.Name,
             "protocol": job.Protocol if hasattr(job, "Protocol") else "unknown",
-            "host": job.Host if hasattr(job, "Host") else "",
+            "host": job.Host if hasattr(job, "Host") else "0.0.0.0",
             "port": job.Port if hasattr(job, "Port") else 0,
+            "domain": domain,
+            "domains": domains,
         }
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -661,6 +671,12 @@ class SliverManager:
             f.write("exit\n")
             rc_file = f.name
 
+        # Build environment with GitHub token if available
+        env = {**os.environ, "HOME": str(Path.home())}
+        if settings.github_token:
+            env["GITHUB_TOKEN"] = settings.github_token
+            logger.debug("Using GitHub token for armory operations")
+
         try:
             process = await asyncio.create_subprocess_exec(
                 '/usr/local/bin/sliver-client',
@@ -668,7 +684,7 @@ class SliverManager:
                 '--rc', rc_file,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={**os.environ, "HOME": str(Path.home())}
+                env=env
             )
 
             stdout, stderr = await asyncio.wait_for(
