@@ -54,10 +54,13 @@ async def get_current_user(
             detail="Invalid token payload",
         )
 
-    # Get user from database
+    # Get user from database with role and permissions eager-loaded
+    from app.models import Role, Permission
     result = await db.execute(
         select(User)
-        .options(selectinload(User.role))
+        .options(
+            selectinload(User.role).selectinload(Role.permissions)
+        )
         .where(User.id == int(user_id))
     )
     user = result.scalar_one_or_none()

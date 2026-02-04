@@ -33,7 +33,7 @@ export const useAuth = create<AuthState>()(
       login: async (username: string, password: string) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await fetch('/api/auth/login', {
+          const response = await fetch('/api/v1/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password }),
@@ -77,7 +77,7 @@ export const useAuth = create<AuthState>()(
         }
 
         try {
-          const response = await fetch('/api/auth/me', {
+          const response = await fetch('/api/v1/auth/me', {
             headers: { Authorization: `Bearer ${token}` },
           });
 
