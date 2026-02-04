@@ -13,6 +13,7 @@ import {
   Clock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/authStore'
 
 interface Screenshot {
   id: string
@@ -31,13 +32,14 @@ export function ScreenshotViewer({ sessionId, sessionName }: ScreenshotViewerPro
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(false)
   const { toast } = useToast()
+  const accessToken = useAuthStore((state) => state.accessToken)
 
   // Take screenshot mutation
   const screenshotMutation = useMutation({
     mutationFn: async () => {
       const response = await fetch(`/api/v1/sessions/${sessionId}/screenshot`, {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          Authorization: `Bearer ${accessToken}`,
         },
       })
       if (!response.ok) throw new Error('Screenshot failed')
