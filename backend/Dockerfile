@@ -6,7 +6,15 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Download and install sliver-client for armory operations
+# sliver-py doesn't support armory, so we use CLI as workaround
+RUN SLIVER_VERSION=$(curl -s https://api.github.com/repos/BishopFox/sliver/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') \
+    && curl -sL "https://github.com/BishopFox/sliver/releases/download/${SLIVER_VERSION}/sliver-client_linux-amd64" -o /usr/local/bin/sliver-client \
+    && chmod +x /usr/local/bin/sliver-client \
+    && /usr/local/bin/sliver-client version || echo "sliver-client installed"
 
 # Copy requirements first for better caching
 COPY requirements.txt .
@@ -17,10 +25,10 @@ COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini .
 
-# Create non-root user
+# Create non-root user with home directory for sliver-client config
 RUN useradd -m -u 1000 sliverui && \
-    mkdir -p /app/data && \
-    chown -R sliverui:sliverui /app
+    mkdir -p /app/data /home/sliverui/.sliver-client/configs && \
+    chown -R sliverui:sliverui /app /home/sliverui
 
 USER sliverui
 

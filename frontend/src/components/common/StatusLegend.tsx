@@ -67,7 +67,7 @@ export function StatusLegend() {
   }
 
   return (
-    <div className="fixed bottom-6 left-6 z-40 w-80 bg-card border rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
+    <div className="fixed bottom-6 left-6 z-[100] w-80 bg-card border rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in duration-200">
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b bg-muted/50">
         <h3 className="font-medium">Color Legend</h3>

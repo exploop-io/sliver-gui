@@ -34,7 +34,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     const token = localStorage.getItem('token')
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
-    return `${protocol}//${host}/api/v1/ws?token=${token}`
+    // WebSocket endpoint is at /ws (not /api/v1/ws)
+    return `${protocol}//${host}/ws?token=${token}`
   }, [])
 
   const handleMessage = useCallback((event: MessageEvent) => {

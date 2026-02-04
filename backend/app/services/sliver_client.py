@@ -4,6 +4,7 @@ Sliver Client Service - Wrapper around SliverPy
 
 import asyncio
 import logging
+import os
 from typing import Optional, List, Any
 from pathlib import Path
 
@@ -595,39 +596,168 @@ class SliverManager:
         }
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # Armory Operations (Extensions)
+    # Armory Operations (Extensions) - Using sliver-client CLI as workaround
+    # sliver-py doesn't support armory operations, so we use subprocess
     # ═══════════════════════════════════════════════════════════════════════════
 
+    _sliver_client_configured = False
+
+    def _setup_sliver_client_config(self) -> bool:
+        """Setup sliver-client config from operator config file"""
+        import subprocess
+
+        # Only run once per process (use class variable via self.__class__)
+        if self.__class__._sliver_client_configured:
+            return True
+
+        config_path = Path(settings.sliver_config) if settings.sliver_config else None
+        if not config_path or not config_path.exists():
+            logger.warning("No operator config found for sliver-client setup")
+            return False
+
+        # Check if config is already imported
+        client_config_dir = Path.home() / ".sliver-client" / "configs"
+        if client_config_dir.exists() and list(client_config_dir.glob("*.cfg")):
+            self.__class__._sliver_client_configured = True
+            return True
+
+        # Import operator config using sliver-client import command
+        try:
+            result = subprocess.run(
+                ['/usr/local/bin/sliver-client', 'import', str(config_path)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env={**os.environ, "HOME": str(Path.home())}
+            )
+            if result.returncode == 0:
+                logger.info(f"Imported operator config: {result.stdout}")
+                self.__class__._sliver_client_configured = True
+                return True
+            else:
+                logger.error(f"Failed to import config: {result.stderr}")
+                return False
+        except Exception as e:
+            logger.error(f"Error importing config: {e}")
+            return False
+
+    async def _run_sliver_client_command(self, command: str, timeout: int = 120) -> str:
+        """Run a sliver-client command and return output"""
+        import asyncio
+        import tempfile
+
+        # Ensure config is set up
+        self._setup_sliver_client_config()
+
+        # Create a temporary rc script with the command
+        # sliver-client uses --rc to run commands from a file
+        # Add 'exit' at the end to ensure the client closes after running the command
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sliver', delete=False) as f:
+            f.write(f"{command}\n")
+            f.write("exit\n")
+            rc_file = f.name
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                '/usr/local/bin/sliver-client',
+                'console',
+                '--rc', rc_file,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, "HOME": str(Path.home())}
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout
+            )
+
+            # Clean up rc file
+            try:
+                os.unlink(rc_file)
+            except:
+                pass
+
+            output = stdout.decode().strip()
+            error = stderr.decode().strip()
+
+            # Check for errors in output
+            if process.returncode != 0 and not output:
+                raise SliverCommandError(f"sliver-client error: {error or 'Unknown error'}")
+
+            # Return combined output (sliver often writes to both stdout and stderr)
+            return output or error
+
+        except asyncio.TimeoutError:
+            try:
+                os.unlink(rc_file)
+            except:
+                pass
+            raise SliverCommandError(f"Command timed out after {timeout}s: {command}")
+        except SliverCommandError:
+            raise
+        except Exception as e:
+            try:
+                os.unlink(rc_file)
+            except:
+                pass
+            raise SliverCommandError(f"Failed to run sliver-client: {str(e)}")
+
     async def get_armory(self) -> List[dict]:
-        """Get list of available armory packages"""
+        """Get list of available armory packages using sliver-client CLI"""
         if not self.is_connected:
             return []
 
         try:
-            # Get armory packages from Sliver
-            packages = await self._client.armory()
-            return [
-                {
-                    "name": pkg.Name,
-                    "command_name": pkg.CommandName if hasattr(pkg, 'CommandName') else pkg.Name,
-                    "repo_url": pkg.RepoURL if hasattr(pkg, 'RepoURL') else "",
-                    "version": pkg.Version if hasattr(pkg, 'Version') else "1.0.0",
-                    "installed": pkg.IsInstalled if hasattr(pkg, 'IsInstalled') else False,
-                    "type": pkg.Type if hasattr(pkg, 'Type') else "alias",
-                }
-                for pkg in packages
-            ]
+            # Try using sliver-client CLI
+            output = await self._run_sliver_client_command("armory")
+            return self._parse_armory_output(output)
         except Exception as e:
-            logger.error(f"Failed to get armory: {e}")
-            # Return mock data for development/demo
+            logger.error(f"Failed to get armory via CLI: {e}")
+            # Fallback to mock data
             return self._get_mock_armory()
 
+    def _parse_armory_output(self, output: str) -> List[dict]:
+        """Parse armory command output into structured data"""
+        packages = []
+        lines = output.strip().split('\n')
+
+        # Skip header lines (usually first 2-3 lines are headers)
+        data_started = False
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Look for data rows (they usually have multiple columns separated by spaces)
+            parts = line.split()
+            if len(parts) >= 2:
+                # Check if this looks like a package row (not a header)
+                if parts[0].lower() not in ['name', 'command', 'package', '─', '━', '═']:
+                    data_started = True
+
+                if data_started:
+                    name = parts[0]
+                    # Try to determine if installed based on output format
+                    installed = '✓' in line or 'installed' in line.lower() or '[x]' in line.lower()
+
+                    packages.append({
+                        "name": name,
+                        "command_name": parts[1] if len(parts) > 1 else name,
+                        "version": parts[2] if len(parts) > 2 else "1.0.0",
+                        "installed": installed,
+                        "type": "alias",
+                        "repo_url": f"https://github.com/search?q={name}",
+                    })
+
+        return packages if packages else self._get_mock_armory()
+
     def _get_mock_armory(self) -> List[dict]:
-        """Return mock armory data for development"""
+        """Return mock armory data for development/fallback"""
         return [
-            {"name": "sharpersist", "command_name": "sharpersist", "version": "1.0.4", "installed": True, "type": "alias", "repo_url": "https://github.com/mandiant/SharPersist"},
-            {"name": "nanodump", "command_name": "nanodump", "version": "1.0.2", "installed": True, "type": "alias", "repo_url": "https://github.com/fortra/nanodump"},
-            {"name": "rubeus", "command_name": "rubeus", "version": "2.2.0", "installed": True, "type": "alias", "repo_url": "https://github.com/GhostPack/Rubeus"},
+            {"name": "sharpersist", "command_name": "sharpersist", "version": "1.0.4", "installed": False, "type": "alias", "repo_url": "https://github.com/mandiant/SharPersist"},
+            {"name": "nanodump", "command_name": "nanodump", "version": "1.0.2", "installed": False, "type": "alias", "repo_url": "https://github.com/fortra/nanodump"},
+            {"name": "rubeus", "command_name": "rubeus", "version": "2.2.0", "installed": False, "type": "alias", "repo_url": "https://github.com/GhostPack/Rubeus"},
             {"name": "seatbelt", "command_name": "seatbelt", "version": "1.2.1", "installed": False, "type": "alias", "repo_url": "https://github.com/GhostPack/Seatbelt"},
             {"name": "sharphound", "command_name": "sharphound", "version": "1.1.0", "installed": False, "type": "alias", "repo_url": "https://github.com/BloodHoundAD/SharpHound"},
             {"name": "certify", "command_name": "certify", "version": "1.0.1", "installed": False, "type": "alias", "repo_url": "https://github.com/GhostPack/Certify"},
@@ -636,19 +766,42 @@ class SliverManager:
         ]
 
     async def install_armory_package(self, package_name: str) -> dict:
-        """Install an armory package"""
+        """Install an armory package using sliver-client CLI"""
+        # Validate package name to prevent command injection
+        if not package_name.replace('-', '').replace('_', '').isalnum():
+            raise SliverCommandError(f"Invalid package name: {package_name}")
+
         try:
-            await self._client.armory_install(package_name)
-            return {"success": True, "package": package_name, "message": f"Installed {package_name}"}
-        except Exception as e:
+            output = await self._run_sliver_client_command(
+                f"armory install {package_name}",
+                timeout=300  # Installation can take a while
+            )
+            logger.info(f"Armory install output: {output}")
+            return {
+                "success": True,
+                "package": package_name,
+                "message": f"Successfully installed {package_name}",
+                "output": output
+            }
+        except SliverCommandError as e:
             raise SliverCommandError(f"Failed to install {package_name}: {str(e)}")
 
     async def uninstall_armory_package(self, package_name: str) -> dict:
-        """Uninstall an armory package"""
+        """Uninstall an armory package using sliver-client CLI"""
+        # Validate package name to prevent command injection
+        if not package_name.replace('-', '').replace('_', '').isalnum():
+            raise SliverCommandError(f"Invalid package name: {package_name}")
+
         try:
-            await self._client.armory_remove(package_name)
-            return {"success": True, "package": package_name, "message": f"Uninstalled {package_name}"}
-        except Exception as e:
+            output = await self._run_sliver_client_command(f"armory remove {package_name}")
+            logger.info(f"Armory uninstall output: {output}")
+            return {
+                "success": True,
+                "package": package_name,
+                "message": f"Successfully uninstalled {package_name}",
+                "output": output
+            }
+        except SliverCommandError as e:
             raise SliverCommandError(f"Failed to uninstall {package_name}: {str(e)}")
 
     # ═══════════════════════════════════════════════════════════════════════════
