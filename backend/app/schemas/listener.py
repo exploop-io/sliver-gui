@@ -34,7 +34,7 @@ class MTLSListenerRequest(BaseModel):
     """Start mTLS listener request"""
 
     host: str = Field(default="0.0.0.0", description="Bind address")
-    port: int = Field(default=8888, ge=1, le=65535)
+    port: int = Field(default=31337, ge=1, le=65535)
 
 
 class HTTPSListenerRequest(BaseModel):
@@ -42,7 +42,7 @@ class HTTPSListenerRequest(BaseModel):
 
     host: str = Field(default="0.0.0.0", description="Bind address")
     port: int = Field(default=443, ge=1, le=65535)
-    domain: str = Field(..., min_length=1, description="Domain for TLS certificate")
+    domain: Optional[str] = Field(default="", description="Domain for TLS certificate (optional)")
     website: Optional[str] = Field(None, description="Website content to serve")
     # Let's Encrypt options
     letsencrypt: bool = Field(default=False, description="Use Let's Encrypt")

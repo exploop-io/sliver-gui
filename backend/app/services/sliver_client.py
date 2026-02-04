@@ -460,23 +460,51 @@ class SliverManager:
             raise SliverCommandError(f"Failed to start mTLS listener: {str(e)}")
 
     async def start_https_listener(
-        self, host: str, port: int, domain: str, **kwargs
+        self, host: str, port: int, domain: str = "", website: str = "", **kwargs
     ) -> dict:
-        """Start HTTPS listener"""
+        """Start HTTPS listener
+
+        Note: Only pass parameters that sliver-py supports.
+        Unsupported params like 'letsencrypt' are filtered out.
+        """
         try:
-            job = await self._client.start_https_listener(
-                host=host, port=port, domain=domain, **kwargs
-            )
+            # Build kwargs - only include supported params
+            listener_kwargs = {
+                "host": host,
+                "port": port,
+            }
+            if domain:
+                listener_kwargs["domain"] = domain
+            if website:
+                listener_kwargs["website"] = website
+
+            # Filter out unsupported kwargs (like letsencrypt)
+            # SliverPy may not support all sliver CLI options
+
+            job = await self._client.start_https_listener(**listener_kwargs)
             return self._job_to_dict(job)
         except Exception as e:
             raise SliverCommandError(f"Failed to start HTTPS listener: {str(e)}")
 
-    async def start_http_listener(self, host: str, port: int, **kwargs) -> dict:
-        """Start HTTP listener"""
+    async def start_http_listener(
+        self, host: str, port: int, domain: str = "", website: str = "", **kwargs
+    ) -> dict:
+        """Start HTTP listener
+
+        Note: Only pass parameters that sliver-py supports.
+        """
         try:
-            job = await self._client.start_http_listener(
-                host=host, port=port, **kwargs
-            )
+            # Build kwargs - only include supported params
+            listener_kwargs = {
+                "host": host,
+                "port": port,
+            }
+            if domain:
+                listener_kwargs["domain"] = domain
+            if website:
+                listener_kwargs["website"] = website
+
+            job = await self._client.start_http_listener(**listener_kwargs)
             return self._job_to_dict(job)
         except Exception as e:
             raise SliverCommandError(f"Failed to start HTTP listener: {str(e)}")
@@ -586,24 +614,51 @@ class SliverManager:
         }
 
     def _job_to_dict(self, job: Any) -> dict:
-        """Convert Sliver job object to dict"""
-        # Extract domain from job - may be in Domains list or Name
-        domains = []
-        if hasattr(job, "Domains") and job.Domains:
-            domains = list(job.Domains)
+        """Convert Sliver job object to dict
 
-        # For HTTP/HTTPS listeners, domain might be encoded in the name
-        domain = domains[0] if domains else None
+        Handles various job response formats from SliverPy.
+        The job object may have different attributes depending on listener type.
+        """
+        try:
+            # Extract domain from job - may be in Domains list or Name
+            domains = []
+            if hasattr(job, "Domains") and job.Domains:
+                domains = list(job.Domains)
 
-        return {
-            "id": str(job.ID),
-            "name": job.Name,
-            "protocol": job.Protocol if hasattr(job, "Protocol") else "unknown",
-            "host": job.Host if hasattr(job, "Host") else "0.0.0.0",
-            "port": job.Port if hasattr(job, "Port") else 0,
-            "domain": domain,
-            "domains": domains,
-        }
+            # For HTTP/HTTPS listeners, domain might be encoded in the name
+            domain = domains[0] if domains else None
+
+            # Get job ID - may be ID or JobID depending on response type
+            job_id = None
+            if hasattr(job, "ID"):
+                job_id = str(job.ID)
+            elif hasattr(job, "JobID"):
+                job_id = str(job.JobID)
+            else:
+                # Generate a placeholder ID if none found
+                job_id = "unknown"
+
+            return {
+                "id": job_id,
+                "name": getattr(job, "Name", "") or "",
+                "protocol": getattr(job, "Protocol", "unknown") or "unknown",
+                "host": getattr(job, "Host", "0.0.0.0") or "0.0.0.0",
+                "port": getattr(job, "Port", 0) or 0,
+                "domain": domain,
+                "domains": domains,
+            }
+        except Exception as e:
+            logger.error(f"Error converting job to dict: {e}, job type: {type(job)}, job: {job}")
+            # Return minimal valid response
+            return {
+                "id": "error",
+                "name": "unknown",
+                "protocol": "unknown",
+                "host": "0.0.0.0",
+                "port": 0,
+                "domain": None,
+                "domains": [],
+            }
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Armory Operations (Extensions) - Using sliver-client CLI as workaround

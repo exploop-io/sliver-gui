@@ -113,12 +113,13 @@ async def start_https_listener(
     """
     Start HTTPS listener
     """
+    # Note: letsencrypt parameter is not supported by SliverPy library
+    # It's kept in the schema for future compatibility but not passed to the client
     job = await sliver.start_https_listener(
         host=listener_config.host,
         port=listener_config.port,
-        domain=listener_config.domain,
-        website=listener_config.website,
-        letsencrypt=listener_config.letsencrypt,
+        domain=listener_config.domain or "",
+        website=listener_config.website or "",
     )
 
     # Audit log
@@ -161,8 +162,8 @@ async def start_http_listener(
     job = await sliver.start_http_listener(
         host=listener_config.host,
         port=listener_config.port,
-        domain=listener_config.domain,
-        website=listener_config.website,
+        domain=listener_config.domain or "",
+        website=listener_config.website or "",
     )
 
     # Audit log
