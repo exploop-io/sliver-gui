@@ -125,6 +125,30 @@ def require_permission(resource: str, action: str):
     return permission_checker
 
 
+def require_role(*roles: str):
+    """
+    Dependency factory to check user role
+
+    Usage:
+        @router.get("/admin")
+        async def admin_endpoint(
+            user: User = Depends(require_role("admin"))
+        ):
+            ...
+    """
+    async def role_checker(
+        current_user: User = Depends(get_current_user),
+    ) -> User:
+        if current_user.role.name not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role required: {', '.join(roles)}",
+            )
+        return current_user
+
+    return role_checker
+
+
 async def get_sliver(
     current_user: User = Depends(get_current_user),
 ) -> SliverManager:
