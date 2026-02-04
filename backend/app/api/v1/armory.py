@@ -80,7 +80,7 @@ async def list_armory_packages(
 @router.post("/install", response_model=ArmoryActionResponse)
 async def install_package(
     request: ArmoryInstallRequest,
-    current_user=Depends(require_role(["admin", "operator"])),
+    current_user=Depends(require_role("admin", "operator")),
     sliver: SliverManager = Depends(get_sliver_client),
 ):
     """Install an armory package"""
@@ -94,7 +94,7 @@ async def install_package(
 @router.post("/uninstall", response_model=ArmoryActionResponse)
 async def uninstall_package(
     request: ArmoryInstallRequest,
-    current_user=Depends(require_role(["admin", "operator"])),
+    current_user=Depends(require_role("admin", "operator")),
     sliver: SliverManager = Depends(get_sliver_client),
 ):
     """Uninstall an armory package"""

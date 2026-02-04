@@ -112,7 +112,7 @@ async def get_cleanup_status(
 @router.post("/sessions/bulk-kill", response_model=BulkKillResponse)
 async def bulk_kill_sessions(
     request: BulkKillRequest,
-    current_user=Depends(require_role(["admin", "operator"])),
+    current_user=Depends(require_role("admin", "operator")),
     sliver: SliverManager = Depends(get_sliver_client),
 ):
     """Kill multiple sessions at once"""
@@ -126,7 +126,7 @@ async def bulk_kill_sessions(
 @router.post("/beacons/bulk-kill", response_model=BulkKillResponse)
 async def bulk_kill_beacons(
     request: BulkKillRequest,
-    current_user=Depends(require_role(["admin", "operator"])),
+    current_user=Depends(require_role("admin", "operator")),
     sliver: SliverManager = Depends(get_sliver_client),
 ):
     """Kill multiple beacons at once"""
@@ -139,7 +139,7 @@ async def bulk_kill_beacons(
 
 @router.post("/sessions/kill-all", response_model=BulkKillResponse)
 async def kill_all_sessions(
-    current_user=Depends(require_role(["admin"])),
+    current_user=Depends(require_role("admin")),
     sliver: SliverManager = Depends(get_sliver_client),
 ):
     """Kill all sessions (admin only)"""
@@ -152,7 +152,7 @@ async def kill_all_sessions(
 
 @router.post("/beacons/kill-all", response_model=BulkKillResponse)
 async def kill_all_beacons(
-    current_user=Depends(require_role(["admin"])),
+    current_user=Depends(require_role("admin")),
     sliver: SliverManager = Depends(get_sliver_client),
 ):
     """Kill all beacons (admin only)"""
@@ -165,7 +165,7 @@ async def kill_all_beacons(
 
 @router.post("/jobs/kill-all", response_model=BulkKillResponse)
 async def kill_all_jobs(
-    current_user=Depends(require_role(["admin"])),
+    current_user=Depends(require_role("admin")),
     sliver: SliverManager = Depends(get_sliver_client),
 ):
     """Kill all jobs/listeners (admin only)"""
@@ -178,7 +178,7 @@ async def kill_all_jobs(
 
 @router.post("/kill-everything")
 async def kill_everything(
-    current_user=Depends(require_role(["admin"])),
+    current_user=Depends(require_role("admin")),
     sliver: SliverManager = Depends(get_sliver_client),
 ):
     """Kill all sessions, beacons, and jobs (admin only) - DANGEROUS"""
