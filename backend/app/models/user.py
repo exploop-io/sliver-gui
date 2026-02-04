@@ -19,6 +19,9 @@ role_permissions = Table(
     Column("permission_id", Integer, ForeignKey("permissions.id"), primary_key=True),
 )
 
+# Alias for import compatibility
+RolePermission = role_permissions
+
 
 class Role(Base, TimestampMixin):
     """User role for RBAC"""
