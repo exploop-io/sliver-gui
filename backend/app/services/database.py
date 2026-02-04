@@ -52,13 +52,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def init_db() -> None:
     """Initialize database - create tables and seed data"""
-    async with engine.begin() as conn:
-        # Create tables
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            # Create tables (if not exist)
+            await conn.run_sync(Base.metadata.create_all)
 
-    # Seed initial data
-    async with async_session_maker() as session:
-        await seed_data(session)
+        # Seed initial data
+        async with async_session_maker() as session:
+            await seed_data(session)
+    except Exception as e:
+        # Tables may already exist from another worker
+        if "already exists" not in str(e):
+            logger.error(f"Database init error: {e}")
+            raise
+        logger.info("Database tables already exist, skipping init")
 
 
 async def close_db() -> None:
