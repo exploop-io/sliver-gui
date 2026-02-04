@@ -31,7 +31,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const { toast } = useToast()
 
   const getWebSocketUrl = useCallback(() => {
-    const token = localStorage.getItem('token')
+    // Token is stored in zustand persist storage as 'sliverui-auth'
+    let token = null
+    try {
+      const authData = localStorage.getItem('sliverui-auth')
+      if (authData) {
+        const parsed = JSON.parse(authData)
+        token = parsed.state?.accessToken || null
+      }
+    } catch (e) {
+      console.error('Failed to parse auth data:', e)
+    }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
     // WebSocket endpoint is at /ws (not /api/v1/ws)
@@ -152,7 +162,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       return
     }
 
-    const token = localStorage.getItem('token')
+    // Token is stored in zustand persist storage as 'sliverui-auth'
+    let token = null
+    try {
+      const authData = localStorage.getItem('sliverui-auth')
+      if (authData) {
+        const parsed = JSON.parse(authData)
+        token = parsed.state?.accessToken || null
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
     if (!token) {
       console.log('No token available for WebSocket connection')
       return
@@ -231,10 +251,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   // Reconnect when token changes
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'token') {
+      if (e.key === 'sliverui-auth') {
         if (e.newValue) {
-          disconnect()
-          setTimeout(connect, 100)
+          try {
+            const parsed = JSON.parse(e.newValue)
+            if (parsed.state?.accessToken) {
+              disconnect()
+              setTimeout(connect, 100)
+            } else {
+              disconnect()
+            }
+          } catch {
+            disconnect()
+          }
         } else {
           disconnect()
         }

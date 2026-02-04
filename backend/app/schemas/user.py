@@ -23,7 +23,8 @@ class UserBase(BaseModel):
     """Base user schema"""
 
     username: str = Field(..., min_length=3, max_length=50)
-    email: Optional[EmailStr] = None
+    # Use str instead of EmailStr to allow .local domains for internal deployments
+    email: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -37,7 +38,8 @@ class UserUpdate(BaseModel):
     """Update user schema"""
 
     username: Optional[str] = Field(None, min_length=3, max_length=50)
-    email: Optional[EmailStr] = None
+    # Use str to allow .local domains for internal deployments
+    email: Optional[str] = None
     password: Optional[str] = Field(None, min_length=8, max_length=100)
     role_id: Optional[int] = None
     is_active: Optional[bool] = None

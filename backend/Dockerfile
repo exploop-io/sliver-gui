@@ -11,10 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Download and install sliver-client for armory operations
 # sliver-py doesn't support armory, so we use CLI as workaround
-RUN SLIVER_VERSION=$(curl -s https://api.github.com/repos/BishopFox/sliver/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/') \
-    && curl -sL "https://github.com/BishopFox/sliver/releases/download/${SLIVER_VERSION}/sliver-client_linux-amd64" -o /usr/local/bin/sliver-client \
+# Using hardcoded version to avoid GitHub API rate limits during build
+ARG SLIVER_VERSION=v1.6.10
+RUN echo "Downloading sliver-client ${SLIVER_VERSION}..." \
+    && curl -fSL "https://github.com/BishopFox/sliver/releases/download/${SLIVER_VERSION}/sliver-client_linux-amd64" -o /usr/local/bin/sliver-client \
     && chmod +x /usr/local/bin/sliver-client \
-    && /usr/local/bin/sliver-client version || echo "sliver-client installed"
+    && /usr/local/bin/sliver-client version
 
 # Copy requirements first for better caching
 COPY requirements.txt .

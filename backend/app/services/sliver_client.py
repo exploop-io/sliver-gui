@@ -603,7 +603,8 @@ class SliverManager:
     _sliver_client_configured = False
     _armory_cache = None
     _armory_cache_time = 0
-    _armory_cache_ttl = 300  # Cache for 5 minutes
+    _armory_cache_ttl = 3600  # Cache for 1 hour (GitHub rate limits are 60/hour)
+    _armory_fallback_used = False  # Track if we're using fallback data
 
     def _setup_sliver_client_config(self) -> bool:
         """Setup sliver-client config from operator config file"""
@@ -854,17 +855,79 @@ class SliverManager:
         return packages if packages else self._get_mock_armory()
 
     def _get_mock_armory(self) -> List[dict]:
-        """Return mock armory data for development/fallback"""
-        return [
-            {"name": "sharpersist", "command_name": "sharpersist", "version": "1.0.4", "installed": False, "type": "alias", "repo_url": "https://github.com/mandiant/SharPersist"},
-            {"name": "nanodump", "command_name": "nanodump", "version": "1.0.2", "installed": False, "type": "alias", "repo_url": "https://github.com/fortra/nanodump"},
-            {"name": "rubeus", "command_name": "rubeus", "version": "2.2.0", "installed": False, "type": "alias", "repo_url": "https://github.com/GhostPack/Rubeus"},
-            {"name": "seatbelt", "command_name": "seatbelt", "version": "1.2.1", "installed": False, "type": "alias", "repo_url": "https://github.com/GhostPack/Seatbelt"},
-            {"name": "sharphound", "command_name": "sharphound", "version": "1.1.0", "installed": False, "type": "alias", "repo_url": "https://github.com/BloodHoundAD/SharpHound"},
-            {"name": "certify", "command_name": "certify", "version": "1.0.1", "installed": False, "type": "alias", "repo_url": "https://github.com/GhostPack/Certify"},
-            {"name": "sharpwmi", "command_name": "sharpwmi", "version": "1.0.0", "installed": False, "type": "alias", "repo_url": "https://github.com/GhostPack/SharpWMI"},
-            {"name": "sharpview", "command_name": "sharpview", "version": "1.0.0", "installed": False, "type": "alias", "repo_url": "https://github.com/tevora-threat/SharpView"},
+        """Return comprehensive armory package list (fallback when GitHub API is rate-limited)"""
+        # Complete list of official Sliver Armory packages from https://github.com/sliverarmory
+        packages = [
+            # GhostPack Tools (C# offensive tools)
+            {"name": "rubeus", "command_name": "rubeus", "version": "2.3.1", "type": "alias", "repo_url": "https://github.com/sliverarmory/rubeus", "help": "Kerberos abuse toolkit"},
+            {"name": "seatbelt", "command_name": "seatbelt", "version": "1.2.1", "type": "alias", "repo_url": "https://github.com/sliverarmory/seatbelt", "help": "Host security survey"},
+            {"name": "certify", "command_name": "certify", "version": "1.1.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/certify", "help": "AD certificate abuse"},
+            {"name": "sharpup", "command_name": "sharpup", "version": "1.1.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpup", "help": "Privilege escalation checks"},
+            {"name": "sharpdpapi", "command_name": "sharpdpapi", "version": "1.12.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpdpapi", "help": "DPAPI secret extraction"},
+            {"name": "sharpwmi", "command_name": "sharpwmi", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpwmi", "help": "WMI lateral movement"},
+            {"name": "sharpchrome", "command_name": "sharpchrome", "version": "1.8.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpchrome", "help": "Chrome credential extraction"},
+            {"name": "lockless", "command_name": "lockless", "version": "2.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/lockless", "help": "Copy locked files"},
+            {"name": "sharpshares", "command_name": "sharpshares", "version": "2.5.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpshares", "help": "Enumerate network shares"},
+
+            # Situational Awareness & Recon
+            {"name": "sharphound", "command_name": "sharphound", "version": "2.3.3", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharphound", "help": "BloodHound data collector"},
+            {"name": "sharpview", "command_name": "sharpview", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpview", "help": "PowerView in C#"},
+            {"name": "sauron", "command_name": "sa", "version": "1.0.2", "type": "extension", "repo_url": "https://github.com/sliverarmory/cs-situational-awareness-bof", "help": "Situational awareness BOFs"},
+            {"name": "sqlrecon", "command_name": "sqlrecon", "version": "3.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sqlrecon", "help": "MS SQL recon and exploitation"},
+            {"name": "adcs", "command_name": "adcs", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/adcs", "help": "AD Certificate Services recon"},
+
+            # Credential Access
+            {"name": "nanodump", "command_name": "nanodump", "version": "1.0.4", "type": "alias", "repo_url": "https://github.com/sliverarmory/nanodump", "help": "LSASS dump tool"},
+            {"name": "safetykatz", "command_name": "safetykatz", "version": "1.2.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/safetykatz", "help": "Mimikatz via DPAPI"},
+            {"name": "sharpkatz", "command_name": "sharpkatz", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpkatz", "help": "C# Mimikatz port"},
+            {"name": "inveigh", "command_name": "inveigh", "version": "2.0.10", "type": "alias", "repo_url": "https://github.com/sliverarmory/inveigh", "help": "LLMNR/NBNS/mDNS spoofer"},
+
+            # Persistence & Execution
+            {"name": "sharpersist", "command_name": "sharpersist", "version": "1.0.4", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpersist", "help": "Windows persistence toolkit"},
+            {"name": "sharptask", "command_name": "sharptask", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharptask", "help": "Scheduled task management"},
+            {"name": "sharpsc", "command_name": "sharpsc", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpsc", "help": "Service management"},
+            {"name": "sharpgpo", "command_name": "sharpgpo", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpgpo", "help": "GPO abuse"},
+            {"name": "sharpsccm", "command_name": "sharpsccm", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpsccm", "help": "SCCM recon and abuse"},
+            {"name": "sharpreg", "command_name": "sharpreg", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpreg", "help": "Remote registry ops"},
+
+            # Lateral Movement
+            {"name": "sharppsexec", "command_name": "sharppsexec", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharppsexec", "help": "PsExec in C#"},
+            {"name": "sharprdp", "command_name": "sharprdp", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharprdp", "help": "RDP hijacking"},
+            {"name": "krbrelayup", "command_name": "krbrelayup", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/krbrelayup", "help": "Kerberos relay privesc"},
+            {"name": "passthehash", "command_name": "pth", "version": "1.0.0", "type": "extension", "repo_url": "https://github.com/sliverarmory/passthehash", "help": "Pass-the-hash attacks"},
+
+            # Defense Evasion
+            {"name": "portbender", "command_name": "portbender", "version": "1.0.2", "type": "extension", "repo_url": "https://github.com/sliverarmory/sliver-portbender", "help": "TCP port redirection"},
+            {"name": "coffloader", "command_name": "coff", "version": "1.1.0", "type": "extension", "repo_url": "https://github.com/sliverarmory/coffloader", "help": "COFF/BOF loader"},
+            {"name": "sharpmapexec", "command_name": "sharpmapexec", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpmapexec", "help": "CrackMapExec in C#"},
+            {"name": "staykit", "command_name": "staykit", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/staykit", "help": "Post-exploitation kit"},
+
+            # BOF Bundles
+            {"name": "cs-situational-awareness-bof", "command_name": "csbof", "version": "1.0.4", "type": "extension", "repo_url": "https://github.com/sliverarmory/cs-situational-awareness-bof", "help": "Cobalt Strike SA BOFs"},
+            {"name": "windowsvulnscan", "command_name": "wvs", "version": "1.0.0", "type": "extension", "repo_url": "https://github.com/sliverarmory/windowsvulnscan", "help": "Windows vuln scanner BOF"},
+            {"name": "bof-registry", "command_name": "bof-reg", "version": "1.0.0", "type": "extension", "repo_url": "https://github.com/sliverarmory/bof-registry", "help": "Registry manipulation BOF"},
+            {"name": "bof-roast", "command_name": "bof-roast", "version": "0.0.2", "type": "extension", "repo_url": "https://github.com/sliverarmory/bof-roast", "help": "Kerberoasting BOF"},
+
+            # Other Tools
+            {"name": "nopowershell", "command_name": "nps", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/nopowershell", "help": "PowerShell without powershell.exe"},
+            {"name": "sharpprinter", "command_name": "sharpprinter", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpprinter", "help": "Printer vulnerability scanner"},
+            {"name": "sharphose", "command_name": "sharphose", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharphose", "help": "Password spraying"},
+            {"name": "kerbrute", "command_name": "kerbrute", "version": "1.0.3", "type": "alias", "repo_url": "https://github.com/sliverarmory/kerbrute", "help": "Kerberos brute force"},
+            {"name": "sharpsniper", "command_name": "sharpsniper", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpsniper", "help": "Find user logons"},
+            {"name": "sharpspray", "command_name": "sharpspray", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpspray", "help": "Password spraying"},
+            {"name": "sharpwebserver", "command_name": "sharpwebserver", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpwebserver", "help": "Simple web server"},
+            {"name": "sliver-crackstation", "command_name": "crackstation", "version": "1.0.0", "type": "extension", "repo_url": "https://github.com/sliverarmory/sliver-crackstation", "help": "Distributed password cracking"},
+            {"name": "sharpsocks", "command_name": "sharpsocks", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpsocks", "help": "SOCKS proxy"},
+            {"name": "sharptoken", "command_name": "sharptoken", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharptoken", "help": "Token manipulation"},
+            {"name": "sharpzerologon", "command_name": "sharpzerologon", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpzerologon", "help": "ZeroLogon (CVE-2020-1472)"},
+            {"name": "sharpadidnsdump", "command_name": "sharpadidnsdump", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpadidnsdump", "help": "Dump ADIDNS records"},
+            {"name": "sharpcloud", "command_name": "sharpcloud", "version": "1.0.0", "type": "alias", "repo_url": "https://github.com/sliverarmory/sharpcloud", "help": "Cloud credential finder"},
         ]
+        # Add installed=False to all packages
+        for pkg in packages:
+            pkg["installed"] = False
+            pkg.setdefault("help", "")
+        return packages
 
     async def install_armory_package(self, package_name: str) -> dict:
         """Install an armory package using sliver-client CLI"""
@@ -877,18 +940,36 @@ class SliverManager:
                 f"armory install {package_name}",
                 timeout=300  # Installation can take a while
             )
-            logger.info(f"Armory install output: {output}")
+            clean_output = self._strip_ansi(output)
+            logger.info(f"Armory install output: {clean_output}")
 
-            # Invalidate cache after install
+            # Check for error messages in output
+            error_indicators = [
+                "No package or bundle named",
+                "failed to",
+                "error:",
+                "[!]",
+                "No indexes found",
+                "rate limit",
+            ]
+            is_error = any(err.lower() in clean_output.lower() for err in error_indicators)
+
+            if is_error:
+                # Installation failed
+                raise SliverCommandError(f"Failed to install {package_name}: {clean_output}")
+
+            # Invalidate cache after successful install
             self.__class__._armory_cache = None
 
             return {
                 "success": True,
                 "package": package_name,
                 "message": f"Successfully installed {package_name}",
-                "output": self._strip_ansi(output)
+                "output": clean_output
             }
-        except SliverCommandError as e:
+        except SliverCommandError:
+            raise
+        except Exception as e:
             raise SliverCommandError(f"Failed to install {package_name}: {str(e)}")
 
     async def uninstall_armory_package(self, package_name: str) -> dict:

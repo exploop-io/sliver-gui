@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/authStore'
 
 interface AuditLog {
   id: number
@@ -36,6 +37,7 @@ export function AuditLogs() {
   const [resourceFilter, setResourceFilter] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 50
+  const accessToken = useAuthStore((state) => state.accessToken)
 
   // Fetch audit logs (needs backend endpoint)
   const { data, isLoading, refetch } = useQuery({
@@ -48,7 +50,7 @@ export function AuditLogs() {
           (resourceFilter ? `&resource=${encodeURIComponent(resourceFilter)}` : ''),
         {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            Authorization: `Bearer ${accessToken}`,
           },
         }
       )
