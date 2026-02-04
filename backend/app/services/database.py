@@ -75,7 +75,7 @@ async def close_db() -> None:
 
 async def seed_data(session: AsyncSession) -> None:
     """Seed initial roles, permissions, and admin user"""
-    from sqlalchemy import select
+    from sqlalchemy import select, insert
 
     # Check if roles exist
     result = await session.execute(select(Role).limit(1))
@@ -109,17 +109,34 @@ async def seed_data(session: AsyncSession) -> None:
 
     await session.flush()
 
-    # Assign permissions to roles
+    # Import the association table
+    from app.models.user import role_permissions
+
+    # Assign permissions to roles using direct insert to association table
+    # This avoids lazy-loading issues with async SQLAlchemy
+
     # Admin gets all permissions
-    admin_role.permissions = permissions
+    admin_perm_records = [
+        {"role_id": admin_role.id, "permission_id": p.id} for p in permissions
+    ]
+    if admin_perm_records:
+        await session.execute(insert(role_permissions), admin_perm_records)
 
     # Operator gets all except user management
-    operator_role.permissions = [
-        p for p in permissions if p.resource not in ["users", "audit"]
+    operator_perm_records = [
+        {"role_id": operator_role.id, "permission_id": p.id}
+        for p in permissions if p.resource not in ["users", "audit"]
     ]
+    if operator_perm_records:
+        await session.execute(insert(role_permissions), operator_perm_records)
 
     # Viewer gets read-only
-    viewer_role.permissions = [p for p in permissions if p.action == "read"]
+    viewer_perm_records = [
+        {"role_id": viewer_role.id, "permission_id": p.id}
+        for p in permissions if p.action == "read"
+    ]
+    if viewer_perm_records:
+        await session.execute(insert(role_permissions), viewer_perm_records)
 
     await session.flush()
 
